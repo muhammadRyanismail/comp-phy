@@ -1,0 +1,377 @@
+import pygame
+import random
+import math
+
+pygame.init()
+
+WIDTH, HEIGHT = 1600, 900
+
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Cosmic Sandbox Simulator")
+
+clock = pygame.time.Clock()
+
+G = 0.05
+TIME_SCALE = 1
+
+TRAILS = True
+DRAW_LINES = False
+
+BLACK = (0, 0, 0)
+WHITE = (255, 255, 255)
+
+STAR_COLORS = [
+    (255,255,255),
+    (120,180,255),
+    (180,100,255),
+    (255,220,120),
+    (255,120,120)
+]
+
+PLANET_COLORS = [
+    (120,255,120),
+    (120,180,255),
+    (255,180,120),
+    (255,120,120),
+    (220,220,220)
+]
+
+MODE = "GALAXY"
+
+class Body:
+
+    def __init__(self, x, y, vx, vy, mass, color, fixed=False):
+
+        self.x = x
+        self.y = y
+
+        self.vx = vx
+        self.vy = vy
+
+        self.mass = mass
+        self.color = color
+
+        self.fixed = fixed
+
+        self.radius = max(2, int(math.sqrt(mass)))
+
+        self.trail = []
+
+    def update(self, bodies):
+
+        if self.fixed:
+            return
+
+        ax = 0
+        ay = 0
+
+        for other in bodies:
+
+            if other == self:
+                continue
+
+            dx = other.x - self.x
+            dy = other.y - self.y
+
+            dist_sq = dx*dx + dy*dy + 25
+
+            if dist_sq < 4:
+                continue
+
+            dist = math.sqrt(dist_sq)
+
+            force = G * self.mass * other.mass / dist_sq
+
+            ax += force * dx / dist / self.mass
+            ay += force * dy / dist / self.mass
+
+        self.vx += ax * TIME_SCALE
+        self.vy += ay * TIME_SCALE
+
+        self.x += self.vx * TIME_SCALE
+        self.y += self.vy * TIME_SCALE
+
+        if TRAILS:
+
+            self.trail.append((self.x, self.y))
+
+            if len(self.trail) > 25:
+                self.trail.pop(0)
+
+    def draw(self):
+
+        if TRAILS and len(self.trail) > 2:
+
+            pygame.draw.lines(
+                screen,
+                self.color,
+                False,
+                self.trail,
+                1
+            )
+
+        pygame.draw.circle(
+            screen,
+            self.color,
+            (int(self.x), int(self.y)),
+            self.radius
+        )
+
+def spawn_galaxy(cx, cy):
+
+    new_bodies = []
+
+    core = Body(
+        cx,
+        cy,
+        0,
+        0,
+        25000,
+        WHITE
+    )
+
+    core.radius = 8
+
+    new_bodies.append(core)
+
+    for i in range(350):
+
+        angle = random.uniform(0, math.pi * 2)
+
+        distance = random.uniform(20, 250)
+
+        x = cx + math.cos(angle) * distance
+        y = cy + math.sin(angle) * distance
+
+        speed = math.sqrt(G * core.mass / (distance + 1))
+
+        vx = -math.sin(angle) * speed
+        vy = math.cos(angle) * speed
+
+        vx += random.uniform(-0.7, 0.7)
+        vy += random.uniform(-0.7, 0.7)
+
+        star = Body(
+            x,
+            y,
+            vx,
+            vy,
+            random.uniform(1, 4),
+            random.choice(STAR_COLORS)
+        )
+
+        new_bodies.append(star)
+
+    return new_bodies
+
+def spawn_blackhole(x, y):
+
+    bh = Body(
+        x,
+        y,
+        0,
+        0,
+        50000,
+        WHITE
+    )
+
+    bh.radius = 10
+
+    return bh
+
+def spawn_planet(x, y):
+
+    return Body(
+        x,
+        y,
+        random.uniform(-2, 2),
+        random.uniform(-2, 2),
+        12,
+        random.choice(PLANET_COLORS)
+    )
+
+def spawn_sun(x, y):
+
+    sun = Body(
+        x,
+        y,
+        0,
+        0,
+        12000,
+        (255,220,120),
+        fixed=True
+    )
+
+    sun.radius = 12
+
+    return sun
+
+bodies = []
+
+paused = False
+
+running = True
+
+while running:
+
+    clock.tick(30)
+
+    for event in pygame.event.get():
+
+        if event.type == pygame.QUIT:
+            running = False
+
+        if event.type == pygame.KEYDOWN:
+
+            if event.key == pygame.K_1:
+                MODE = "GALAXY"
+
+            if event.key == pygame.K_2:
+                MODE = "BLACKHOLE"
+
+            if event.key == pygame.K_3:
+                MODE = "PLANET"
+
+            if event.key == pygame.K_4:
+                MODE = "SUN"
+
+            # OTHER
+            if event.key == pygame.K_SPACE:
+                paused = not paused
+
+            if event.key == pygame.K_r:
+                bodies = []
+
+            if event.key == pygame.K_t:
+                TRAILS = not TRAILS
+
+            if event.key == pygame.K_g:
+                DRAW_LINES = not DRAW_LINES
+
+        if event.type == pygame.MOUSEBUTTONDOWN:
+
+            if event.button == 1:
+
+                mx, my = pygame.mouse.get_pos()
+
+                if MODE == "GALAXY":
+
+                    bodies.extend(
+                        spawn_galaxy(mx, my)
+                    )
+
+                elif MODE == "BLACKHOLE":
+
+                    bodies.append(
+                        spawn_blackhole(mx, my)
+                    )
+
+                elif MODE == "PLANET":
+
+                    bodies.append(
+                        spawn_planet(mx, my)
+                    )
+
+                elif MODE == "SUN":
+
+                    bodies.append(
+                        spawn_sun(mx, my)
+                    )
+
+
+    fade = pygame.Surface((WIDTH, HEIGHT))
+
+    fade.set_alpha(30)
+
+    fade.fill(BLACK)
+
+    screen.blit(fade, (0, 0))
+
+    if not paused:
+
+        for body in bodies:
+            body.update(bodies)
+
+    if DRAW_LINES:
+
+        for i in range(0, len(bodies), 12):
+
+            for j in range(i+1, min(i+8, len(bodies))):
+
+                b1 = bodies[i]
+                b2 = bodies[j]
+
+                dx = b1.x - b2.x
+                dy = b1.y - b2.y
+
+                dist = math.sqrt(dx*dx + dy*dy)
+
+                if dist < 120:
+
+                    pygame.draw.line(
+                        screen,
+                        (80,60,140),
+                        (b1.x, b1.y),
+                        (b2.x, b2.y),
+                        1
+                    )
+
+    for body in bodies:
+        body.draw()
+
+    font = pygame.font.SysFont("Arial", 20)
+
+    fps = int(clock.get_fps())
+
+    hud = [
+        f"FPS: {fps}",
+        f"Bodies: {len(bodies)}",
+        f"Current Tool: {MODE}",
+        "",
+        "1 = Galaxy",
+        "2 = Black Hole",
+        "3 = Planet",
+        "4 = Sun",
+        "",
+        "Left Click = Spawn",
+        "SPACE = Pause",
+        "R = Reset",
+        "T = Trails",
+        "G = Gravity Web"
+    ]
+
+    y = 10
+
+    for line in hud:
+
+        txt = font.render(
+            line,
+            True,
+            WHITE
+        )
+
+        screen.blit(txt, (10, y))
+
+        y += 22
+
+    if len(bodies) == 0:
+
+        bigfont = pygame.font.SysFont("Arial", 42)
+
+        txt = bigfont.render(
+            "CREATE YOUR UNIVERSE",
+            True,
+            (180,100,255)
+        )
+
+        screen.blit(
+            txt,
+            (
+                WIDTH//2 - txt.get_width()//2,
+                HEIGHT//2 - txt.get_height()//2
+            )
+        )
+
+    pygame.display.flip()
+
+pygame.quit()
